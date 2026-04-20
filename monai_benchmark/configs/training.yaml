@@ -1,0 +1,154 @@
+# Training Configuration for 8-Model Benchmark
+# April 17, 2026
+
+#############################################
+# Common Hyperparameters (All Models)
+#############################################
+common:
+  batch_size: 8
+  num_workers: 4
+  pin_memory: true
+  epochs: 50
+  val_freq: 5  # Validate every 5 epochs
+  optimizer: Adam
+  base_lr: 1e-5
+  weight_decay: 1e-5
+  
+  # Preprocessing
+  hu_window: [-74, 140]  # Optimized HU range from data analysis
+  patch_size: [96, 96, 96]  # Sliding window size
+  
+  # Loss & Metrics
+  loss: DiceCELoss
+  class_weights: [0.1, 0.5, 0.4]  # Background, Pancreas, Tumor
+  
+  # Data augmentation (training only)
+  augmentation:
+    flip_prob: 0.5
+    rotate_prob: 0.3
+    rotate_range: 15  # degrees
+    scale_prob: 0.2
+    scale_range: [0.9, 1.1]
+
+#############################################
+# Model-Specific Hyperparameters
+#############################################
+
+models:
+  
+  # 1. DiNTS (baseline inference only)
+  dints:
+    strategy: inference_only
+    device: cuda
+    num_workers: 2
+    
+  # 2. Swin-UNETR (pretrained on BTCV, fine-tune)
+  swin_unetr:
+    strategy: fine_tune
+    lr: 1e-4  # Higher LR for pretrained models
+    warmup_epochs: 5
+    ema_decay: 0.99  # Exponential moving average
+    spatial_dims: 3
+    in_channels: 1
+    out_channels: 3
+    feature_size: 48
+    
+  # 3. SegResNet (pretrained on TotalSegmentator, fine-tune)
+  segresnet:
+    strategy: fine_tune
+    lr: 1e-4
+    warmup_epochs: 5
+    ema_decay: 0.99
+    init_filters: 8
+    out_channels: 3
+    
+  # 4. U-Net (pretrained on spleen, fine-tune)
+  unet:
+    strategy: fine_tune
+    lr: 1e-4
+    warmup_epochs: 3
+    spatial_dims: 3
+    in_channels: 1
+    out_channels: 3
+    channels: [16, 32, 64, 128, 256]
+    strides: [2, 2, 2, 2]
+    num_res_units: 2
+    
+  # 5. Attention UNet (train from scratch)
+  attention_unet:
+    strategy: train_from_scratch
+    lr: 1e-4
+    warmup_epochs: 3
+    spatial_dims: 3
+    in_channels: 1
+    out_channels: 3
+    channels: [32, 64, 128, 256]
+    strides: [2, 2, 2]
+    num_res_units: 2
+    
+  # 6. UNet++ (train from scratch)
+  unetplusplus:
+    strategy: train_from_scratch
+    lr: 1e-4
+    warmup_epochs: 3
+    spatial_dims: 3
+    in_channels: 1
+    out_channels: 3
+    channels: [32, 64, 128, 256]
+    strides: [2, 2, 2]
+    deep_supervision: true
+    
+  # 7. nnUNet (train from scratch, auto-config)
+  nnunet:
+    strategy: train_from_scratch
+    lr: 1e-4
+    warmup_epochs: 3
+    auto_config: true  # Let nnUNet decide architecture
+    plans_identifier: "nnUNetPlans"
+    configuration: "3d_fullres"  # Use 3D full resolution
+    
+  # 8. ResNet-50 + Decoder (fine-tune, optional)
+  resnet_unet:
+    strategy: fine_tune
+    lr: 1e-4
+    warmup_epochs: 3
+    backbone: "resnet50"
+    pretrained_backbone: true
+    in_channels: 1
+    out_channels: 3
+    decoder_channels: [256, 128, 64, 32]
+
+#############################################
+# Training Loop Settings
+#############################################
+training:
+  device: cuda
+  mixed_precision: true  # Use AMP for faster training + memory efficiency
+  gradient_accumulation_steps: 1
+  max_norm_gradient: 1.0  # Gradient clipping
+  early_stopping_patience: 10  # Stop if no improvement for 10 epochs
+  checkpoint_dir: "checkpoints"
+  log_dir: "logs"
+  save_best_only: true
+
+#############################################
+# Data Settings
+#############################################
+data:
+  data_dir: "dataset/Task_7/imagesTr"
+  labels_dir: "dataset/Task_7/labelsTr"
+  splits_dir: "monai_benchmark/splits"
+  cache_rate: 0.2  # Cache 20% of data in memory
+  num_workers: 4
+
+#############################################
+# Inference Settings
+#############################################
+inference:
+  sliding_window_batch_size: 4
+  roi_size: [96, 96, 96]
+  overlap: 0.25
+  device: cuda
+  post_processing:
+    remove_small_components: true
+    min_size: 50  # voxels

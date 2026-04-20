@@ -20,3 +20,4 @@ code/segmentation_results/
 .idea/
 *.swp
 *.swo
+dataset/
