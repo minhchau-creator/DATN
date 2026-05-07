@@ -111,19 +111,17 @@ if __name__ == "__main__":
         patient_output_dir = os.path.join(OUTPUT_ROOT, patient_id)
         os.makedirs(patient_output_dir, exist_ok=True)
 
-        # File DICOM lưu tạm ra .nii.gz rồi di chuyển sang đuôi .nifti
-        tmp_image_path = os.path.join(patient_output_dir, f"{patient_id}_image.nii.gz")
-        final_image_path = os.path.join(patient_output_dir, f"{patient_id}_image.nifti")
+        # Chuyển DICOM → NIfTI (.nii.gz)
+        final_image_path = os.path.join(patient_output_dir, f"{patient_id}_image.nii.gz")
         
-        convert_dicom_folder_to_nifti(input_dicom_folder, tmp_image_path)
+        convert_dicom_folder_to_nifti(input_dicom_folder, final_image_path)
         
-        if os.path.exists(tmp_image_path):
-            os.replace(tmp_image_path, final_image_path)
-            print(f"✅ Đã chuẩn hóa tên ảnh: {final_image_path}")
+        if os.path.exists(final_image_path):
+            print(f"✅ Đã chuyển từ dicom thành .nifti : {final_image_path}")
 
-        # Label: copy `label00XX.nii.gz` sang `PANCREAS_00XX_label.nifti`
+        # Label: copy `label00XX.nii.gz` sang `PANCREAS_00XX_label.nii.gz`
         label_src = get_label_source_path(patient_id, LABEL_ROOT)
-        final_label_path = os.path.join(patient_output_dir, f"{patient_id}_label.nifti")
+        final_label_path = os.path.join(patient_output_dir, f"{patient_id}_label.nii.gz")
 
         if os.path.exists(label_src):
             shutil.copy2(label_src, final_label_path)
