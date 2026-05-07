@@ -1,355 +1,337 @@
 #!/usr/bin/env python3
 """
-Unified Model Factory for 8-Model Benchmark
-Handles loading, initialization, and pretrained weight loading for all architectures.
+Unified Model Factory for 8-Model Benchmark.
+Handles initialization and pretrained weight loading for all architectures.
 """
 
+import logging
 import torch
 import torch.nn as nn
-from monai.networks.nets import (
-    SwinUNETR, SegResNet, UNet, AttentionUNet, DynUNet
-)
-from monai.networks.layers import Norm
-import logging
+from monai.networks.nets import SwinUNETR, SegResNet, UNet, DynUNet
 
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Custom architectures
+# ---------------------------------------------------------------------------
+
 class UNetPlusPlus(nn.Module):
     """
-    UNet++ implementation (Nested U-Net with deep supervision).
-    Paper: Zhou et al., 2020 - "UNet++: Redesigning Skip Connections to Exploit Multiscale Features in Image Segmentation"
+    Simplified UNet++ (Nested U-Net) with deep supervision.
+    Ref: Zhou et al., 2020
     """
-    def __init__(self, in_channels=1, out_channels=3, channels=(32, 64, 128, 256), strides=(2, 2, 2), deep_supervision=True):
+    def __init__(self, in_channels=1, out_channels=3,
+                 channels=(32, 64, 128, 256), strides=(2, 2, 2), deep_supervision=True):
         super().__init__()
         self.deep_supervision = deep_supervision
-        self.out_channels = out_channels
-        
-        # Encoder
-        self.encoder = nn.ModuleList()
+
+        def conv_block(in_ch, out_ch):
+            return nn.Sequential(
+                nn.Conv3d(in_ch, out_ch, 3, padding=1),
+                nn.InstanceNorm3d(out_ch),
+                nn.LeakyReLU(0.01, inplace=True),
+                nn.Conv3d(out_ch, out_ch, 3, padding=1),
+                nn.InstanceNorm3d(out_ch),
+                nn.LeakyReLU(0.01, inplace=True),
+            )
+
+        self.encoders = nn.ModuleList()
         in_ch = in_channels
         for ch in channels:
-            self.encoder.append(nn.Sequential(
-                nn.Conv3d(in_ch, ch, 3, padding=1),
-                nn.InstanceNorm3d(ch),
-                nn.ReLU(inplace=True),
-                nn.Conv3d(ch, ch, 3, padding=1),
-                nn.InstanceNorm3d(ch),
-                nn.ReLU(inplace=True)
-            ))
+            self.encoders.append(conv_block(in_ch, ch))
             in_ch = ch
-        
-        # Downsample
-        self.down = nn.MaxPool3d(2, 2)
-        
-        # Decoder with skip connections (simplified nested structure)
-        self.decoder = nn.ModuleList()
+
+        self.pool = nn.MaxPool3d(2, 2)
+
+        # Decoder: upsample from channels[i] + skip channels[i-1] → channels[i-1]
+        self.upsamples = nn.ModuleList()
+        self.decoders = nn.ModuleList()
         for i in range(len(channels) - 1, 0, -1):
-            self.decoder.append(nn.Sequential(
-                nn.ConvTranspose3d(channels[i], channels[i-1], 2, stride=2),
-                nn.Conv3d(channels[i], channels[i-1], 3, padding=1),
-                nn.InstanceNorm3d(channels[i-1]),
-                nn.ReLU(inplace=True)
-            ))
-        
-        # Output layers
+            self.upsamples.append(
+                nn.ConvTranspose3d(channels[i], channels[i - 1], 2, stride=2)
+            )
+            self.decoders.append(conv_block(channels[i - 1] * 2, channels[i - 1]))
+
         self.out_conv = nn.Conv3d(channels[0], out_channels, 1)
-        
+
     def forward(self, x):
-        # Encoder
-        features = []
+        skips = []
         out = x
-        for enc in self.encoder[:-1]:
+        for enc in self.encoders[:-1]:
             out = enc(out)
-            features.append(out)
-            out = self.down(out)
-        
-        # Bottom
-        out = self.encoder[-1](out)
-        
-        # Decoder
-        for i, dec in enumerate(self.decoder):
-            out = dec(out)
-            out = torch.cat([out, features[-(i+1)]], dim=1)  # Skip connection
-        
-        # Output
-        out = self.out_conv(out)
-        return out
+            skips.append(out)
+            out = self.pool(out)
+        out = self.encoders[-1](out)
+
+        for up, dec, skip in zip(self.upsamples, self.decoders, reversed(skips)):
+            out = up(out)
+            out = dec(torch.cat([out, skip], dim=1))
+
+        return self.out_conv(out)
 
 
-class AttentionUNetModule(nn.Module):
-    """Attention U-Net implementation with attention gates."""
-    def __init__(self, in_channels=1, out_channels=3, channels=(32, 64, 128, 256), strides=(2, 2, 2)):
+class AttentionUNetCustom(nn.Module):
+    """3D Attention U-Net with attention gates."""
+    def __init__(self, in_channels=1, out_channels=3,
+                 channels=(32, 64, 128, 256)):
         super().__init__()
-        self.out_channels = out_channels
-        
-        # Encoder
-        self.encoder_blocks = nn.ModuleList()
+
+        def conv_block(in_ch, out_ch):
+            return nn.Sequential(
+                nn.Conv3d(in_ch, out_ch, 3, padding=1),
+                nn.InstanceNorm3d(out_ch),
+                nn.LeakyReLU(0.01, inplace=True),
+                nn.Conv3d(out_ch, out_ch, 3, padding=1),
+                nn.InstanceNorm3d(out_ch),
+                nn.LeakyReLU(0.01, inplace=True),
+            )
+
+        self.encoders = nn.ModuleList()
         in_ch = in_channels
         for ch in channels[:-1]:
-            self.encoder_blocks.append(nn.Sequential(
-                nn.Conv3d(in_ch, ch, 3, padding=1),
-                nn.InstanceNorm3d(ch),
-                nn.ReLU(inplace=True),
-                nn.Conv3d(ch, ch, 3, padding=1),
-                nn.InstanceNorm3d(ch),
-                nn.ReLU(inplace=True)
-            ))
+            self.encoders.append(conv_block(in_ch, ch))
             in_ch = ch
-        
-        # Bottleneck
-        self.bottleneck = nn.Sequential(
-            nn.Conv3d(channels[-2], channels[-1], 3, padding=1),
-            nn.InstanceNorm3d(channels[-1]),
-            nn.ReLU(inplace=True),
-            nn.Conv3d(channels[-1], channels[-1], 3, padding=1),
-            nn.InstanceNorm3d(channels[-1]),
-            nn.ReLU(inplace=True)
-        )
-        
-        # Decoder with attention
-        self.decoder_blocks = nn.ModuleList()
+
+        self.bottleneck = conv_block(channels[-2], channels[-1])
+        self.pool = nn.MaxPool3d(2, 2)
+
+        self.upsamples = nn.ModuleList()
+        self.decoders = nn.ModuleList()
+        self.att_gates = nn.ModuleList()
         for i in range(len(channels) - 1, 0, -1):
-            self.decoder_blocks.append(nn.ConvTranspose3d(channels[i], channels[i-1], 2, stride=2))
-        
-        # Attention gates
-        self.attention_gates = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv3d(channels[i-1] * 2, channels[i-1], 1),
-                nn.ReLU(inplace=True),
-                nn.Conv3d(channels[i-1], 1, 1),
-                nn.Sigmoid()
+            self.upsamples.append(
+                nn.ConvTranspose3d(channels[i], channels[i - 1], 2, stride=2)
             )
-            for i in range(1, len(channels))
-        ])
-        
-        # Output
+            # Attention gate: gate (channels[i-1]) + skip (channels[i-1]) → 1
+            self.att_gates.append(nn.Sequential(
+                nn.Conv3d(channels[i - 1] * 2, channels[i - 1], 1),
+                nn.LeakyReLU(0.01, inplace=True),
+                nn.Conv3d(channels[i - 1], 1, 1),
+                nn.Sigmoid(),
+            ))
+            self.decoders.append(conv_block(channels[i - 1] * 2, channels[i - 1]))
+
         self.out_conv = nn.Conv3d(channels[0], out_channels, 1)
-        self.down = nn.MaxPool3d(2, 2)
-    
+
     def forward(self, x):
-        # Encoder
-        features = []
+        skips = []
         out = x
-        for block in self.encoder_blocks:
-            out = block(out)
-            features.append(out)
-            out = self.down(out)
-        
-        # Bottleneck
+        for enc in self.encoders:
+            out = enc(out)
+            skips.append(out)
+            out = self.pool(out)
+
         out = self.bottleneck(out)
-        
-        # Decoder with attention
-        for i, (att_gate, dec) in enumerate(zip(self.attention_gates, self.decoder_blocks)):
-            out = dec(out)
-            skip = features[-(i+1)]
-            # Attention: out * sigmoid(concat(out, skip))
-            att = att_gate(torch.cat([out, skip], dim=1))
-            out = out * att + skip
-        
-        # Output
-        out = self.out_conv(out)
-        return out
+
+        for up, att, dec, skip in zip(
+            self.upsamples, self.att_gates, self.decoders, reversed(skips)
+        ):
+            out = up(out)
+            att_map = att(torch.cat([out, skip], dim=1))
+            gated_skip = skip * att_map
+            out = dec(torch.cat([out, gated_skip], dim=1))
+
+        return self.out_conv(out)
 
 
-def get_model(model_name, pretrained=True, in_channels=1, out_channels=3, device='cuda', config=None):
+# ---------------------------------------------------------------------------
+# nnUNet-style DynUNet configuration helper
+# ---------------------------------------------------------------------------
+
+def _nnunet_config(patch_size=(96, 96, 96), in_channels=1, out_channels=3):
     """
-    Factory function to get any model instance.
-    
+    Auto-configure DynUNet (nnUNet equivalent) for a given patch size.
+    5-level 3D full-resolution setup.
+    """
+    n_levels = 5
+    strides = [[1, 1, 1]] + [[2, 2, 2]] * (n_levels - 1)   # (5,)
+    kernel_size = [[3, 3, 3]] * n_levels                     # (5,)
+    upsample_kernel_size = [[2, 2, 2]] * (n_levels - 1)      # (4,)
+    filters = [32, 64, 128, 256, 320]
+
+    return dict(
+        spatial_dims=3,
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=kernel_size,
+        strides=strides,
+        upsample_kernel_size=upsample_kernel_size,
+        filters=filters,
+        dropout=0.0,
+        norm_name=("INSTANCE", {"affine": True}),
+        act_name=("leakyrelu", {"inplace": True, "negative_slope": 0.01}),
+        deep_supervision=True,
+        deep_supr_num=2,
+        res_block=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Model factory
+# ---------------------------------------------------------------------------
+
+def get_model(model_name, pretrained=True, in_channels=1, out_channels=3,
+              device="cuda", config=None):
+    """
+    Return a model instance on the specified device.
+
     Args:
-        model_name: Name of model ('swin_unetr', 'segresnet', 'unet', etc.)
-        pretrained: Whether to load pretrained weights
-        in_channels: Input channels (1 for CT)
-        out_channels: Output channels (3 for Background, Pancreas, Tumor)
-        device: Device to load model on
-        config: Optional config dict with model-specific parameters
-    
+        model_name: one of 'swin_unetr', 'segresnet', 'unet', 'attention_unet',
+                    'unetplusplus', 'nnunet', 'resnet_unet'
+        pretrained:  try to load pretrained weights when True
+        in_channels: 1 for single-channel CT
+        out_channels: 3 for (background, pancreas, tumor)
+        device: torch device string or object
+        config: optional dict with model-specific overrides
+
     Returns:
-        model: PyTorch model on specified device
+        nn.Module on device
     """
-    
     if config is None:
         config = {}
-    
-    model = None
-    
+
+    name = model_name.lower()
+
     try:
-        if model_name.lower() == 'dints':
-            logger.info("⚠️  DiNTS should be loaded via NIFTIBundle, not this factory")
+        if name == "dints":
+            logger.warning("DiNTS: load via MONAI bundle, not this factory. Returning None.")
             return None
-            
-        elif model_name.lower() == 'swin_unetr':
-            logger.info("📦 Loading Swin-UNETR...")
+
+        elif name == "swin_unetr":
+            logger.info("Loading Swin-UNETR...")
             model = SwinUNETR(
                 img_size=(96, 96, 96),
                 in_channels=in_channels,
                 out_channels=out_channels,
                 feature_size=48,
-                use_checkpoint=True,  # Reduce memory
-                spatial_dims=3
+                use_checkpoint=True,
+                spatial_dims=3,
             )
             if pretrained:
-                logger.info("🔗 Loading BTCV pretrained weights...")
-                try:
-                    from monai.apps import download_and_extract
-                    import os
-                    model_dir = os.path.expanduser("~/.cache/monai/models")
-                    url = "https://github.com/Project-MONAI/MONAI-extra-test-data/releases/download/0.4.0/swin_unetr_btcv_segmentation_fold0.pt"
-                    checkpoint = download_and_extract(url, model_dir)
-                    state_dict = torch.load(checkpoint, map_location='cpu')
-                    # Handle potential state dict key mismatches
-                    model.load_state_dict(state_dict, strict=False)
-                    logger.info("✓ BTCV weights loaded")
-                except Exception as e:
-                    logger.warning(f"Could not load pretrained weights: {e}. Training from random init.")
-                    
-        elif model_name.lower() == 'segresnet':
-            logger.info("📦 Loading SegResNet...")
+                _load_swin_unetr_weights(model)
+
+        elif name == "segresnet":
+            logger.info("Loading SegResNet...")
             model = SegResNet(
                 spatial_dims=3,
                 init_filters=8,
                 in_channels=in_channels,
                 out_channels=out_channels,
-                use_checkpoint=True
+                use_checkpoint=True,
             )
             if pretrained:
-                logger.info("🔗 Loading TotalSegmentator pretrained weights...")
-                try:
-                    from monai.apps import download_and_extract
-                    import os
-                    model_dir = os.path.expanduser("~/.cache/monai/models")
-                    url = "https://github.com/Project-MONAI/MONAI-extra-test-data/releases/download/0.4.0/segresnet_totalseg.pt"
-                    checkpoint = download_and_extract(url, model_dir)
-                    state_dict = torch.load(checkpoint, map_location='cpu')
-                    model.load_state_dict(state_dict, strict=False)
-                    logger.info("✓ TotalSegmentator weights loaded")
-                except Exception as e:
-                    logger.warning(f"Could not load pretrained weights: {e}")
-                    
-        elif model_name.lower() == 'unet':
-            logger.info("📦 Loading U-Net...")
+                logger.warning("No reliable public SegResNet checkpoint — training from random init.")
+
+        elif name == "unet":
+            logger.info("Loading U-Net...")
             model = UNet(
                 spatial_dims=3,
                 in_channels=in_channels,
                 out_channels=out_channels,
                 channels=(16, 32, 64, 128, 256),
                 strides=(2, 2, 2, 2),
-                num_res_units=2
+                num_res_units=2,
             )
             if pretrained:
-                logger.info("🔗 Loading spleen bundle pretrained weights...")
-                try:
-                    from monai.apps import download_and_extract
-                    import os
-                    model_dir = os.path.expanduser("~/.cache/monai/models")
-                    url = "https://github.com/Project-MONAI/MONAI-extra-test-data/releases/download/0.4.0/spleen_ct_segmentation_unet_f48d16f0.pt"
-                    checkpoint = download_and_extract(url, model_dir)
-                    state_dict = torch.load(checkpoint, map_location='cpu')
-                    model.load_state_dict(state_dict, strict=False)
-                    logger.info("✓ Spleen weights loaded")
-                except Exception as e:
-                    logger.warning(f"Could not load pretrained weights: {e}")
-                    
-        elif model_name.lower() == 'attention_unet':
-            logger.info("📦 Building Attention UNet (no pretrained)...")
-            model = AttentionUNetModule(
+                logger.warning("No reliable public 3-class U-Net checkpoint — training from random init.")
+
+        elif name == "attention_unet":
+            logger.info("Building Attention U-Net...")
+            model = AttentionUNetCustom(
                 in_channels=in_channels,
                 out_channels=out_channels,
                 channels=(32, 64, 128, 256),
-                strides=(2, 2, 2)
             )
-            
-        elif model_name.lower() == 'unetplusplus':
-            logger.info("📦 Building UNet++ (no pretrained)...")
+
+        elif name == "unetplusplus":
+            logger.info("Building UNet++...")
             model = UNetPlusPlus(
                 in_channels=in_channels,
                 out_channels=out_channels,
                 channels=(32, 64, 128, 256),
                 strides=(2, 2, 2),
-                deep_supervision=True
+                deep_supervision=True,
             )
-            
-        elif model_name.lower() == 'nnunet':
-            logger.info("⚠️  nnUNet requires separate setup via nnunetv2")
-            logger.info("    Use: from nnunetv2.imaging_utils import convert_case")
-            return None
-            
-        elif model_name.lower() == 'resnet_unet':
-            logger.info("📦 Loading ResNet-50 + Decoder...")
-            # ResNet50 backbone + custom decoder
-            from monai.networks.nets import BasicUNet
-            # Simplified: use DynUNet with ResNet backbone
-            model = DynUNet(
-                spatial_dims=3,
-                init_filters=32,
+
+        elif name == "nnunet":
+            logger.info("Building nnUNet (MONAI DynUNet)...")
+            cfg = _nnunet_config(
+                patch_size=config.get("patch_size", (96, 96, 96)),
                 in_channels=in_channels,
                 out_channels=out_channels,
-                strides=(2, 2, 2, 2),
-                upsample_kernel_size=(2, 2, 2, 2),
-                norm_name=("instance", {"affine": True}),
-                act_name=("RELU", {"inplace": True}),
-                dropout=0.0,
-                use_checkpoint=True
             )
-            logger.info("✓ ResNet-UNet created (DynUNet variant)")
-            
+            model = DynUNet(**cfg)
+            logger.info("nnUNet (DynUNet) built with 5-level 3D full-res config + deep supervision.")
+
+        elif name == "resnet_unet":
+            logger.info("Building ResNet-UNet (DynUNet variant)...")
+            cfg = _nnunet_config(
+                patch_size=config.get("patch_size", (96, 96, 96)),
+                in_channels=in_channels,
+                out_channels=out_channels,
+            )
+            # Slightly wider filters for ResNet-UNet
+            cfg["filters"] = [32, 64, 128, 256, 512]
+            cfg["deep_supervision"] = False
+            model = DynUNet(**cfg)
+
         else:
             raise ValueError(f"Unknown model: {model_name}")
-        
-        if model is None:
-            raise RuntimeError(f"Failed to create model {model_name}")
-        
-        # Move to device
+
         model = model.to(device)
-        logger.info(f"✓ {model_name} loaded on {device}")
+        n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        logger.info(f"{model_name} on {device} | params: {n_params:,}")
         return model
-        
-    except Exception as e:
-        logger.error(f"❌ Error loading {model_name}: {e}")
+
+    except Exception:
+        logger.exception(f"Failed to create model '{model_name}'")
         raise
 
 
+def _load_swin_unetr_weights(model):
+    """Attempt to download and load BTCV pretrained Swin-UNETR weights."""
+    try:
+        import os
+        import torch
+
+        model_dir = os.path.expanduser("~/.cache/monai/models")
+        os.makedirs(model_dir, exist_ok=True)
+        weight_path = os.path.join(model_dir, "swin_unetr_btcv_segmentation_fold0.pt")
+
+        if not os.path.exists(weight_path):
+            url = (
+                "https://github.com/Project-MONAI/MONAI-extra-test-data/"
+                "releases/download/0.4.0/swin_unetr_btcv_segmentation_fold0.pt"
+            )
+            logger.info(f"Downloading Swin-UNETR BTCV weights from {url}")
+            torch.hub.download_url_to_file(url, weight_path)
+
+        state_dict = torch.load(weight_path, map_location="cpu")
+        # Some checkpoints wrap under 'state_dict' key
+        if "state_dict" in state_dict:
+            state_dict = state_dict["state_dict"]
+        missing, unexpected = model.load_state_dict(state_dict, strict=False)
+        logger.info(f"BTCV weights loaded. Missing: {len(missing)}, Unexpected: {len(unexpected)}")
+    except Exception as e:
+        logger.warning(f"Could not load Swin-UNETR pretrained weights: {e}. Using random init.")
+
+
 def count_parameters(model):
-    """Count trainable parameters in model."""
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def test_model_output_shape(model, device='cuda'):
-    """Test model with dummy input to verify output shape."""
-    try:
-        dummy_input = torch.randn(1, 1, 96, 96, 96, device=device)
-        dummy_input = dummy_input.to(device)
-        with torch.no_grad():
-            output = model(dummy_input)
-        logger.info(f"✓ Output shape: {output.shape}")
-        return output.shape
-    except Exception as e:
-        logger.error(f"❌ Model test failed: {e}")
-        return None
-
-
 if __name__ == "__main__":
-    import logging
     logging.basicConfig(level=logging.INFO)
-    
-    # Test loading all models
-    models_to_test = ['swin_unetr', 'segresnet', 'unet', 'attention_unet', 'unetplusplus', 'resnet_unet']
-    
-    print("\n" + "="*60)
-    print("Testing Model Factory")
-    print("="*60)
-    
-    for model_name in models_to_test:
-        print(f"\n🧪 Testing {model_name.upper()}...")
+    for name in ["swin_unetr", "segresnet", "unet", "attention_unet",
+                 "unetplusplus", "nnunet", "resnet_unet"]:
         try:
-            model = get_model(model_name, pretrained=False, device='cuda')
-            if model is not None:
-                params = count_parameters(model)
-                print(f"   Parameters: {params:,}")
-                test_model_output_shape(model)
+            m = get_model(name, pretrained=False, device="cpu")
+            if m is not None:
+                x = torch.randn(1, 1, 96, 96, 96)
+                with torch.no_grad():
+                    out = m(x)
+                shape = out[0].shape if isinstance(out, (list, tuple)) else out.shape
+                print(f"  {name}: output={shape}, params={count_parameters(m):,}")
         except Exception as e:
-            print(f"   Error: {e}")
-    
-    print("\n" + "="*60)
-    print("Phase 2A ✓ Model factory test complete!")
-    print("="*60)
+            print(f"  {name}: ERROR - {e}")
