@@ -15,12 +15,10 @@ echo "=== Dataset sẽ được lưu vào: $DATASET_ROOT ==="
 mkdir -p "$DATASET_ROOT"
 
 echo "=== Cài gdown ==="
-pip install -q gdown
+pip install -q "gdown>=5.1.0"
 
 echo "=== Tải dataset từ Google Drive ==="
-gdown --folder "1QJXC5EpH-ww5d2cyc8VzYtrRkBOX6anQ" \
-      --output "$DATASET_ROOT/" \
-      --remaining-ok
+gdown --folder "1QJXC5EpH-ww5d2cyc8VzYtrRkBOX6anQ" -O "$DATASET_ROOT/"
 
 echo "=== Cài dependencies ==="
 pip install -q monai[all] nibabel scipy scikit-learn tqdm pyyaml matplotlib
