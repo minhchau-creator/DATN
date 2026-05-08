@@ -40,7 +40,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DEFAULT_DATA_DIR = "/mnt/d/DATN/dataset/Task_7"
+DEFAULT_DATA_DIR = "/workspace/dataset/Task_7"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

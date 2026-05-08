@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 MODEL    = "nnunet"   # "nnunet" | "swin_unetr"
 FOLDS    = [0, 1, 2, 3, 4]
 DEVICE   = "cuda:0"
-DATA_DIR = "/mnt/d/DATN/dataset/Task_7"
+DATA_DIR = "/workspace/dataset/Task_7"
 #EARLY_STOP = 10 
 # ─────────────────────────────────────────────────────────────────────────────
 
