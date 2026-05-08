@@ -19,7 +19,20 @@ def convert_dicom_folder_to_nifti(dicom_folder: str, output_path: str):
         return
 
     print(f"📁 Đang tải {len(dcm_files)} DICOM slices...")
-    slices = [pydicom.dcmread(f) for f in dcm_files]
+    slices = []
+    for f in dcm_files:
+        try:
+            ds = pydicom.dcmread(f, force=True)
+            if not hasattr(ds, 'ImagePositionPatient'):
+                continue
+            slices.append(ds)
+        except Exception as e:
+            print(f"  ⚠️ Bỏ qua file lỗi: {os.path.basename(f)} ({e})")
+
+    if not slices:
+        print(f"❌ Không đọc được slice hợp lệ nào trong: {dicom_folder}")
+        return
+
     slices.sort(key=lambda x: float(x.ImagePositionPatient[2]))
 
     # 2. Xây dựng ma trận ảnh 3D (Volume) và chuyển sang đơn vị Hounsfield (HU)
@@ -87,9 +100,10 @@ def get_label_source_path(patient_id: str, label_root: str):
     return os.path.join(label_root, f"label{numeric_id}.nii.gz")
 
 if __name__ == "__main__":
-    IMAGES_ROOT = "/home/minhchau/anaconda3/envs/datn/DATN/dataset/TCIA/images_ct_TCIA"
-    LABEL_ROOT = "/home/minhchau/anaconda3/envs/datn/DATN/dataset/TCIA/label_TCIA/TCIA_pancreas_labels-02-05-2017"
-    OUTPUT_ROOT = "/home/minhchau/anaconda3/envs/datn/DATN/dataset/TCIA_nifti"
+    IMAGES_ROOT  = "/mnt/d/DATN/dataset/TCIA/images_ct_TCIA"
+    LABEL_ROOT   = "/mnt/d/DATN/dataset/TCIA/label_TCIA/TCIA_pancreas_labels-02-05-2017"
+    OUTPUT_ROOT  = "/mnt/d/DATN/dataset/TCIA_nifti2"
+    RESUME_FROM  = "PANCREAS_0031"   # chạy tiếp từ đây, None = chạy từ đầu
 
     patient_ids = sorted(
         [
@@ -99,7 +113,17 @@ if __name__ == "__main__":
         ]
     )
 
+    if RESUME_FROM:
+        patient_ids = [p for p in patient_ids if p >= RESUME_FROM]
+        print(f"▶️  Resume từ {RESUME_FROM} — còn {len(patient_ids)} bệnh nhân\n")
+
     for patient_id in patient_ids:
+        # Bỏ qua nếu output đã tồn tại đầy đủ
+        out_img = os.path.join(OUTPUT_ROOT, patient_id, f"{patient_id}_image.nii.gz")
+        out_lbl = os.path.join(OUTPUT_ROOT, patient_id, f"{patient_id}_label.nii.gz")
+        if os.path.exists(out_img) and os.path.exists(out_lbl):
+            print(f"⏭️  Bỏ qua (đã xong): {patient_id}")
+            continue
         print(f"\n🩺 Đang xử lý: {patient_id}")
         patient_folder = os.path.join(IMAGES_ROOT, patient_id)
 
@@ -117,7 +141,7 @@ if __name__ == "__main__":
         convert_dicom_folder_to_nifti(input_dicom_folder, final_image_path)
         
         if os.path.exists(final_image_path):
-            print(f"✅ Đã chuyển từ dicom thành .nifti : {final_image_path}")
+            print(f"✅ Đã chuyển từ dicom thành .nii.gz : {final_image_path}")
 
         # Label: copy `label00XX.nii.gz` sang `PANCREAS_00XX_label.nii.gz`
         label_src = get_label_source_path(patient_id, LABEL_ROOT)

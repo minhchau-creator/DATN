@@ -26,6 +26,7 @@ MODEL    = "nnunet"   # "nnunet" | "swin_unetr"
 FOLDS    = [0, 1, 2, 3, 4]
 DEVICE   = "cuda:0"
 DATA_DIR = "/mnt/d/DATN/dataset/Task_7"
+#EARLY_STOP = 10 
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -112,11 +113,11 @@ def train_fold(fold_idx):
                     json.dumps(avg_m, indent=2))
                 patience_ctr = 0
                 logger.info(f"  ✓ best saved  (dice={best_dice:.4f})")
-            else:
-                patience_ctr += 1
-                if patience_ctr >= 10:
-                    logger.info(f"  Early stop at epoch {epoch}")
-                    break
+            # else:
+            #     patience_ctr += 1
+            #     if patience_ctr >= EARLY_STOP:
+            #         logger.info(f"  Early stop at epoch {epoch}")
+            #         break
         else:
             logger.info(f"Epoch {epoch:3d}/50 | loss={total_loss/len(train_loader):.4f}")
 
