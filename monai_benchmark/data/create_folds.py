@@ -33,9 +33,9 @@ def get_label_properties(label_path):
 
 
 def create_5fold_splits(
-    data_dir="/home/minhchau/anaconda3/envs/datn/DATN/dataset/Task_7/imagesTr",
-    labels_dir="/home/minhchau/anaconda3/envs/datn/DATN/dataset/Task_7/labelsTr",
-    output_dir="/home/minhchau/anaconda3/envs/datn/DATN/monai_benchmark/splits",
+    data_dir=str(Path(__file__).resolve().parent.parent.parent / "dataset" / "Task_7" / "imagesTr"),
+    labels_dir=str(Path(__file__).resolve().parent.parent.parent / "dataset" / "Task_7" / "labelsTr"),
+    output_dir=str(Path(__file__).resolve().parent.parent / "splits"),
     n_splits=5,
     random_seed=42
 ):

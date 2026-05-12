@@ -23,7 +23,7 @@ from monai.transforms import (
 logger = logging.getLogger(__name__)
 
 # Default dataset location — update if different
-DATA_DIR = "/workspace/dataset/Task_7"
+DATA_DIR = "/home/vancan/chou/DATN/dataset/Task_7"
 
 
 def build_data_list(file_names, data_dir=DATA_DIR):
@@ -71,6 +71,8 @@ def get_train_transforms(hu_window=None, patch_size=None, augmentation_config=No
         ),
         # Crop to foreground before patch extraction to reduce background sampling
         CropForegroundd(keys=["image", "label"], source_key="image"),
+        # Pad if any axis is smaller than the crop size (e.g. thin-slice volumes)
+        SpatialPadd(keys=["image", "label"], spatial_size=patch_size),
         # Random patch extraction: pos=1 means at least 1 patch contains label voxel
         RandCropByPosNegLabeld(
             keys=["image", "label"],

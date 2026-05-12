@@ -8,12 +8,13 @@ build/
 # Large files
 *.pt
 *.pth
-*.ts
+*.tar
 *.onnx
 
 # Outputs
 code/segmentation_results/
 *.nii.gz
+
 
 # IDE
 .vscode/
@@ -21,3 +22,10 @@ code/segmentation_results/
 *.swp
 *.swo
 dataset/
+drive_cookies.txt
+monitor_vram.log
+vram_monitor.log
+prepare.sh
+GPU_SETUP.md
+
+

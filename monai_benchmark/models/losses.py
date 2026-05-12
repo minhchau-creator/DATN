@@ -80,6 +80,9 @@ class DeepSupervisionLoss(nn.Module):
         self.base_loss = base_loss
 
     def forward(self, outputs, targets):
+        # DynUNet deep_supervision=True returns (B, n_heads, C, D, H, W)
+        if isinstance(outputs, torch.Tensor) and outputs.ndim == 6:
+            outputs = [outputs[:, i] for i in range(outputs.shape[1])]
         if not isinstance(outputs, (list, tuple)):
             return self.base_loss(outputs, targets)
 

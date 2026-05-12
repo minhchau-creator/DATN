@@ -335,7 +335,7 @@ def main():
     parser.add_argument(
         "--data-dir",
         type=str,
-        default="/home/minhchau/anaconda3/envs/datn/DATN/dataset/Task_7/imagesTr",
+        default=str(__import__("pathlib").Path(__file__).resolve().parents[2] / "dataset" / "Task_7" / "imagesTr"),
         help="Path to input CT scans folder"
     )
     parser.add_argument(
@@ -347,7 +347,7 @@ def main():
     parser.add_argument(
         "--labels-dir",
         type=str,
-        default="/home/minhchau/anaconda3/envs/datn/DATN/dataset/Task_7/labelsTr",
+        default=str(__import__("pathlib").Path(__file__).resolve().parents[2] / "dataset" / "Task_7" / "labelsTr"),
         help="Path to ground truth labels folder (optional)"
     )
     parser.add_argument(
@@ -802,7 +802,7 @@ def main():
     parser.add_argument(
         "--data-dir",
         type=str,
-        default="/home/minhchau/anaconda3/envs/datn/DATN/dataset/Task_7/imagesTr",
+        default=str(__import__("pathlib").Path(__file__).resolve().parents[2] / "dataset" / "Task_7" / "imagesTr"),
         help="Path to input CT scans folder"
     )
     parser.add_argument(
@@ -827,7 +827,7 @@ def main():
     parser.add_argument(
         "--labels-dir",
         type=str,
-        default="/home/minhchau/anaconda3/envs/datn/DATN/dataset/Task_7/labelsTr",
+        default=str(__import__("pathlib").Path(__file__).resolve().parents[2] / "dataset" / "Task_7" / "labelsTr"),
         help="Path to ground truth labels folder (optional)"
     )
     

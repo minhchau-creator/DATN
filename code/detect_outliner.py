@@ -16,9 +16,9 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-TASK7_IMG_DIR = Path("/workspace/dataset/Task_7/imagesTr")
-TASK7_LBL_DIR = Path("/workspace/dataset/Task_7/labelsTr")
-REPORTS_DIR   = Path("/home/minhc/DATN/reports")
+TASK7_IMG_DIR = Path("/mnt/d/DATN/dataset/Task_7/imagesTr")
+TASK7_LBL_DIR = Path("/mnt/d/DATN/dataset/Task_7/labelsTr")
+REPORTS_DIR   = Path(__file__).resolve().parent.parent / "reports"
 CACHE_CSV     = REPORTS_DIR / "features_cache.csv"
 OUTPUT_PNG    = REPORTS_DIR / "outlier_lof.png"
 REPORTS_DIR.mkdir(exist_ok=True)
