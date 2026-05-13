@@ -25,9 +25,10 @@ COPY deploy/server.py /app/server.py
 # VOLUME ["/app/checkpoints"]
 
 # ── Runtime config (override with -e in docker run) ───────────────────────────
-ENV MODEL_NAME=nnunet \
+ENV MODEL_NAME=nnunet_finetuned \
     MODEL_FOLD=0 \
     CKPT_DIR=/app/checkpoints \
+    CKPT_PATH="" \
     HU_MIN=-74 \
     HU_MAX=140 \
     DEVICE=cuda \

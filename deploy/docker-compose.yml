@@ -14,14 +14,19 @@ services:
       # Mount trained checkpoints from host
       - ../checkpoints:/app/checkpoints:ro
     environment:
-      MODEL_NAME:  ${MODEL_NAME:-nnunet}
-      MODEL_FOLD:  ${MODEL_FOLD:-0}
-      CKPT_DIR:    /app/checkpoints
-      HU_MIN:      ${HU_MIN:--74}
-      HU_MAX:      ${HU_MAX:-140}
-      DEVICE:      ${DEVICE:-cuda}
-      SW_BATCH:    ${SW_BATCH:-4}
-      SW_OVERLAP:  ${SW_OVERLAP:-0.25}
+      MODEL_NAME:       ${MODEL_NAME:-nnunet_finetuned}
+      MODEL_FOLD:       ${MODEL_FOLD:-0}
+      CKPT_DIR:         /app/checkpoints
+      CKPT_PATH:        ${CKPT_PATH:-}
+      HU_MIN:           ${HU_MIN:--74}
+      HU_MAX:           ${HU_MAX:-140}
+      DEVICE:           ${DEVICE:-cuda}
+      SW_BATCH:         ${SW_BATCH:-4}
+      SW_OVERLAP:       ${SW_OVERLAP:-0.25}
+      USE_TWO_STAGE:    ${USE_TWO_STAGE:-false}
+      STAGE2_FOLD:      ${STAGE2_FOLD:-0}
+      STAGE2_CKPT_PATH: ${STAGE2_CKPT_PATH:-}
+      BBOX_MARGIN:      ${BBOX_MARGIN:-20}
     deploy:
       resources:
         reservations:
