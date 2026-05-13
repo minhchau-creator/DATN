@@ -201,7 +201,6 @@ def get_model(model_name, pretrained=True, in_channels=1, out_channels=3,
         elif name == "swin_unetr":
             logger.info("Loading Swin-UNETR...")
             model = SwinUNETR(
-                img_size=(96, 96, 96),
                 in_channels=in_channels,
                 out_channels=out_channels,
                 feature_size=48,

@@ -27,5 +27,6 @@ monitor_vram.log
 vram_monitor.log
 prepare.sh
 GPU_SETUP.md
+*.zip
 
 

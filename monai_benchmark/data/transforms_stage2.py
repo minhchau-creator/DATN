@@ -32,6 +32,10 @@ PATCH_SIZE  = [96, 96, 96]
 MASK_MARGIN = 20   # voxels around GT bounding box
 
 
+def _select_foreground(x):
+    return x > 0
+
+
 def get_train_transforms_stage2(hu_window=None, patch_size=None):
     """
     Training pipeline for stage 2.
@@ -56,7 +60,7 @@ def get_train_transforms_stage2(hu_window=None, patch_size=None):
         CropForegroundd(
             keys=["image", "label"],
             source_key="label",
-            select_fn=lambda x: x > 0,
+            select_fn=_select_foreground,
             margin=MASK_MARGIN,
         ),
         SpatialPadd(keys=["image", "label"], spatial_size=patch_size),
@@ -102,7 +106,7 @@ def get_val_transforms_stage2(hu_window=None):
         CropForegroundd(
             keys=["image", "label"],
             source_key="label",
-            select_fn=lambda x: x > 0,
+            select_fn=_select_foreground,
             margin=MASK_MARGIN,
         ),
         SpatialPadd(keys=["image", "label"], spatial_size=PATCH_SIZE),

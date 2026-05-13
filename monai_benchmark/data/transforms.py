@@ -23,7 +23,7 @@ from monai.transforms import (
 logger = logging.getLogger(__name__)
 
 # Default dataset location — update if different
-DATA_DIR = "/home/vancan/chou/DATN/dataset/Task_7"
+DATA_DIR = "/home/minhc/DATN/dataset/Task_7"
 
 
 def build_data_list(file_names, data_dir=DATA_DIR):
